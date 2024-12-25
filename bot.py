@@ -19,7 +19,8 @@ logger = logging.getLogger(__name__)
 main_menu = ReplyKeyboardMarkup(
     keyboard=[
         [KeyboardButton(text="Зарегистрироваться в базе")],
-        [KeyboardButton(text="Найти")]
+        [KeyboardButton(text="Найти")],
+        [KeyboardButton(text="Редактировать данные")]
     ],
     resize_keyboard=True
 )
@@ -28,15 +29,15 @@ register_menu = ReplyKeyboardMarkup(
     keyboard=[
         [KeyboardButton(text="Как представительство")],
         [KeyboardButton(text="Как партнёр")],
-        [KeyboardButton(text="Назад"), KeyboardButton(text="Главная")]
+        [KeyboardButton(text="Назад")]
     ],
     resize_keyboard=True
 )
 
-search_menu = ReplyKeyboardMarkup(
+edit_menu = ReplyKeyboardMarkup(
     keyboard=[
-        [KeyboardButton(text="Представительство")],
-        [KeyboardButton(text="Партнёр")],
+        [KeyboardButton(text="Редактировать представительство")],
+        [KeyboardButton(text="Редактировать партнёра")],
         [KeyboardButton(text="Назад"), KeyboardButton(text="Главная")]
     ],
     resize_keyboard=True
@@ -49,183 +50,163 @@ class RepresentativeRegistration(StatesGroup):
     phone = State()
     contact_person = State()
 
-class SearchStates(StatesGroup):
+class PartnerRegistration(StatesGroup):
+    country = State()
+    city = State()
+    name = State()
+    phone = State()
+    telegram = State()
+
+class EditStates(StatesGroup):
     representative_search = State()
     partner_search = State()
+    edit_country = State()
+    edit_city = State()
+    edit_address = State()
+    edit_phone = State()
+    edit_contact_person = State()
 
-def connect_db():
-    return sqlite3.connect("fohow.db")
+# Ensure SSL is available for secure connections
+def verify_ssl_support():
+    try:
+        import ssl
+        logger.info("SSL module is available.")
+    except ImportError:
+        logger.error("SSL module is not available. Please ensure it is installed.")
+        raise
 
-def execute_query(query, params=None):
-    with connect_db() as conn:
-        cursor = conn.cursor()
-        if params:
-            cursor.execute(query, params)
-        else:
-            cursor.execute(query)
-        conn.commit()
-
-def fetch_query(query, params=None):
-    with connect_db() as conn:
-        cursor = conn.cursor()
-        if params:
-            cursor.execute(query, params)
-        else:
-            cursor.execute(query)
-        return cursor.fetchall()
 
 def create_tables():
-    execute_query("""
-        CREATE TABLE IF NOT EXISTS representatives (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            country TEXT NOT NULL,
-            city TEXT NOT NULL,
-            address TEXT NOT NULL,
-            phone TEXT NOT NULL,
-            contact_person TEXT NOT NULL
-        )
-    """)
-    execute_query("""
-        CREATE TABLE IF NOT EXISTS partners (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            country TEXT NOT NULL,
-            city TEXT NOT NULL,
-            name TEXT NOT NULL,
-            phone TEXT NOT NULL,
-            telegram TEXT
-        )
-    """)
+    with sqlite3.connect("fohow.db") as conn:
+        cursor = conn.cursor()
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS representatives (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                country TEXT NOT NULL,
+                city TEXT NOT NULL,
+                address TEXT NOT NULL,
+                phone TEXT NOT NULL,
+                contact_person TEXT NOT NULL
+            )
+        """)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS partners (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                country TEXT NOT NULL,
+                city TEXT NOT NULL,
+                name TEXT NOT NULL,
+                phone TEXT NOT NULL,
+                telegram TEXT
+            )
+        """)
+        conn.commit()
 
 @dp.message(Command("start"))
 async def send_welcome(message: Message):
+    logger.info("Обработчик /start вызван.")
     await message.answer(
         "Добро пожаловать в Базу FOHOW!\nВыберите действие из меню ниже.",
         reply_markup=main_menu
     )
 
-@dp.message(lambda message: message.text == "Зарегистрироваться в базе")
-async def register_handler(message: Message):
+@dp.message(lambda message: message.text == "Редактировать данные")
+async def edit_handler(message: Message):
     await message.answer(
-        "Выберите, кого вы хотите зарегистрировать:",
-        reply_markup=register_menu
+        "Выберите, что вы хотите редактировать:",
+        reply_markup=edit_menu
     )
 
-@dp.message(lambda message: message.text == "Как представительство")
-async def register_representative(message: Message, state: FSMContext):
-    await message.answer("Введите страну:")
-    await state.set_state(RepresentativeRegistration.country)
+@dp.message(lambda message: message.text == "Редактировать представительство")
+async def edit_representative(message: Message, state: FSMContext):
+    await message.answer("Введите ID представительства, которое хотите отредактировать:")
+    await state.set_state(EditStates.representative_search)
 
-@dp.message(RepresentativeRegistration.country)
-async def ask_city(message: Message, state: FSMContext):
-    await state.update_data(country=message.text)
-    await message.answer("Введите город:")
-    await state.set_state(RepresentativeRegistration.city)
+@dp.message(EditStates.representative_search)
+async def update_representative(message: Message, state: FSMContext):
+    rep_id = message.text.strip()
+    with sqlite3.connect("fohow.db") as conn:
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT id, country, city, address, phone, contact_person
+            FROM representatives
+            WHERE id = ?
+        """, (rep_id,))
+        result = cursor.fetchone()
 
-@dp.message(RepresentativeRegistration.city)
-async def ask_address(message: Message, state: FSMContext):
-    await state.update_data(city=message.text)
-    await message.answer("Введите адрес:")
-    await state.set_state(RepresentativeRegistration.address)
-
-@dp.message(RepresentativeRegistration.address)
-async def ask_phone(message: Message, state: FSMContext):
-    await state.update_data(address=message.text)
-    await message.answer("Введите телефон:")
-    await state.set_state(RepresentativeRegistration.phone)
-
-@dp.message(RepresentativeRegistration.phone)
-async def ask_contact_person(message: Message, state: FSMContext):
-    await state.update_data(phone=message.text)
-    await message.answer("Введите имя контактного лица:")
-    await state.set_state(RepresentativeRegistration.contact_person)
-
-@dp.message(RepresentativeRegistration.contact_person)
-async def finish_registration(message: Message, state: FSMContext):
-    user_data = await state.get_data()
-    execute_query("""
-        INSERT INTO representatives (country, city, address, phone, contact_person)
-        VALUES (?, ?, ?, ?, ?)
-    """, (user_data['country'], user_data['city'], user_data['address'], user_data['phone'], message.text))
-    await message.answer("Регистрация завершена!")
-    await state.clear()
-
-@dp.message(lambda message: message.text == "Найти")
-async def search_handler(message: Message):
-    await message.answer(
-        "Что вы хотите найти?",
-        reply_markup=search_menu
-    )
-
-@dp.message(lambda message: message.text == "Представительство")
-async def search_representative(message: Message, state: FSMContext):
-    await message.answer("Введите страну для поиска представительств:")
-    await state.set_state(SearchStates.representative_search)
-
-@dp.message(SearchStates.representative_search)
-async def process_representative_search(message: Message, state: FSMContext):
-    query = message.text.strip()
-    results = fetch_query("""
-        SELECT country, city, address, phone, contact_person
-        FROM representatives
-        WHERE country LIKE ?
-    """, (f"%{query}%",))
-
-    if results:
-        response = "Результаты поиска (Представительства):\n\n"
-        for rep in results:
-            response += (
-                f"Страна: {rep[0]}\n"
-                f"Город: {rep[1]}\n"
-                f"Адрес: {rep[2]}\n"
-                f"Телефон: {rep[3]}\n"
-                f"Контактное лицо: {rep[4]}\n\n"
-            )
+    if result:
+        data = {
+            "id": result[0],
+            "country": result[1],
+            "city": result[2],
+            "address": result[3],
+            "phone": result[4],
+            "contact_person": result[5]
+        }
+        await state.update_data(rep_id=rep_id)
+        await message.answer(
+            f"Текущие данные:\n"
+            f"Страна: {data['country']}\nГород: {data['city']}\n"
+            f"Адрес: {data['address']}\nТелефон: {data['phone']}\n"
+            f"Контактное лицо: {data['contact_person']}\n\n"
+            f"Введите новое значение для страны или напишите 'Пропустить':"
+        )
+        await state.set_state(EditStates.edit_country)
     else:
-        response = "Представительства не найдены.\n"
+        await message.answer("Представительство с указанным ID не найдено.")
+        await state.clear()
 
-    await message.answer(response, reply_markup=search_menu)
+@dp.message(EditStates.edit_country)
+async def process_edit_country(message: Message, state: FSMContext):
+    new_value = message.text.strip()
+    if new_value.lower() != "пропустить":
+        user_data = await state.get_data()
+        with sqlite3.connect("fohow.db") as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                UPDATE representatives
+                SET country = ?
+                WHERE id = ?
+            """, (new_value, user_data['rep_id']))
+    await message.answer("Введите новое значение для города или напишите 'Пропустить':")
+    await state.set_state(EditStates.edit_city)
+
+@dp.message(EditStates.edit_city)
+async def process_edit_city(message: Message, state: FSMContext):
+    new_value = message.text.strip()
+    if new_value.lower() != "пропустить":
+        user_data = await state.get_data()
+        with sqlite3.connect("fohow.db") as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                UPDATE representatives
+                SET city = ?
+                WHERE id = ?
+            """, (new_value, user_data['rep_id']))
+    await message.answer("Введите новое значение для адреса или напишите 'Пропустить':")
+    await state.set_state(EditStates.edit_address)
+
+@dp.message(EditStates.edit_address)
+async def process_edit_address(message: Message, state: FSMContext):
+    new_value = message.text.strip()
+    if new_value.lower() != "пропустить":
+        user_data = await state.get_data()
+        with sqlite3.connect("fohow.db") as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                UPDATE representatives
+                SET address = ?
+                WHERE id = ?
+            """, (new_value, user_data['rep_id']))
+    await message.answer("Редактирование завершено.", reply_markup=main_menu)
     await state.clear()
-
-@dp.message(lambda message: message.text == "Партнёр")
-async def search_partner(message: Message, state: FSMContext):
-    await message.answer("Введите страну для поиска партнёров:")
-    await state.set_state(SearchStates.partner_search)
-
-@dp.message(SearchStates.partner_search)
-async def process_partner_search(message: Message, state: FSMContext):
-    query = message.text.strip()
-    results = fetch_query("""
-        SELECT country, city, name, phone, telegram
-        FROM partners
-        WHERE country LIKE ?
-    """, (f"%{query}%",))
-
-    if results:
-        response = "Результаты поиска (Партнёры):\n\n"
-        for part in results:
-            response += (
-                f"Страна: {part[0]}\n"
-                f"Город: {part[1]}\n"
-                f"Имя: {part[2]}\n"
-                f"Телефон: {part[3]}\n"
-                f"Telegram: {part[4] or 'Не указано'}\n\n"
-            )
-    else:
-        response = "Партнёры не найдены.\n"
-
-    await message.answer(response, reply_markup=search_menu)
-    await state.clear()
-
-@dp.message(lambda message: message.text in ["Назад", "Главная"])
-async def go_back_or_home(message: Message):
-    if message.text == "Назад":
-        await message.answer("Вы вернулись в меню поиска.", reply_markup=search_menu)
-    elif message.text == "Главная":
-        await message.answer("Вы вернулись в главное меню.", reply_markup=main_menu)
 
 async def main():
+    verify_ssl_support()
     create_tables()
+    logger.info("Бот запущен...")
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
+    import nest_asyncio
+    nest_asyncio.apply()
     asyncio.run(main())
