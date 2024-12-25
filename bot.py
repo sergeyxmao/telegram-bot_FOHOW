@@ -49,6 +49,10 @@ class RepresentativeRegistration(StatesGroup):
     phone = State()
     contact_person = State()
 
+class SearchStates(StatesGroup):
+    representative_search = State()
+    partner_search = State()
+
 def connect_db():
     return sqlite3.connect("fohow.db")
 
@@ -153,33 +157,22 @@ async def search_handler(message: Message):
     )
 
 @dp.message(lambda message: message.text == "Представительство")
-async def search_representative(message: Message):
+async def search_representative(message: Message, state: FSMContext):
     await message.answer("Введите страну для поиска представительств:")
+    await state.set_state(SearchStates.representative_search)
 
-@dp.message(lambda message: message.text == "Партнёр")
-async def search_partner(message: Message):
-    await message.answer("Введите страну для поиска партнёров:")
-
-@dp.message()
-async def process_search_query(message: Message):
+@dp.message(SearchStates.representative_search)
+async def process_representative_search(message: Message, state: FSMContext):
     query = message.text.strip()
-    results_rep = fetch_query("""
+    results = fetch_query("""
         SELECT country, city, address, phone, contact_person
         FROM representatives
         WHERE country LIKE ?
     """, (f"%{query}%",))
 
-    results_part = fetch_query("""
-        SELECT country, city, name, phone, telegram
-        FROM partners
-        WHERE country LIKE ?
-    """, (f"%{query}%",))
-
-    response = "Результаты поиска:\n\n"
-    
-    if results_rep:
-        response += "Представительства:\n"
-        for rep in results_rep:
+    if results:
+        response = "Результаты поиска (Представительства):\n\n"
+        for rep in results:
             response += (
                 f"Страна: {rep[0]}\n"
                 f"Город: {rep[1]}\n"
@@ -188,11 +181,28 @@ async def process_search_query(message: Message):
                 f"Контактное лицо: {rep[4]}\n\n"
             )
     else:
-        response += "Представительства не найдены.\n\n"
+        response = "Представительства не найдены.\n"
 
-    if results_part:
-        response += "Партнёры:\n"
-        for part in results_part:
+    await message.answer(response, reply_markup=search_menu)
+    await state.clear()
+
+@dp.message(lambda message: message.text == "Партнёр")
+async def search_partner(message: Message, state: FSMContext):
+    await message.answer("Введите страну для поиска партнёров:")
+    await state.set_state(SearchStates.partner_search)
+
+@dp.message(SearchStates.partner_search)
+async def process_partner_search(message: Message, state: FSMContext):
+    query = message.text.strip()
+    results = fetch_query("""
+        SELECT country, city, name, phone, telegram
+        FROM partners
+        WHERE country LIKE ?
+    """, (f"%{query}%",))
+
+    if results:
+        response = "Результаты поиска (Партнёры):\n\n"
+        for part in results:
             response += (
                 f"Страна: {part[0]}\n"
                 f"Город: {part[1]}\n"
@@ -201,9 +211,17 @@ async def process_search_query(message: Message):
                 f"Telegram: {part[4] or 'Не указано'}\n\n"
             )
     else:
-        response += "Партнёры не найдены.\n\n"
+        response = "Партнёры не найдены.\n"
 
-    await message.answer(response)
+    await message.answer(response, reply_markup=search_menu)
+    await state.clear()
+
+@dp.message(lambda message: message.text in ["Назад", "Главная"])
+async def go_back_or_home(message: Message):
+    if message.text == "Назад":
+        await message.answer("Вы вернулись в меню поиска.", reply_markup=search_menu)
+    elif message.text == "Главная":
+        await message.answer("Вы вернулись в главное меню.", reply_markup=main_menu)
 
 async def main():
     create_tables()
