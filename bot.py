@@ -11,17 +11,12 @@ import os
 
 API_TOKEN = "7780696135:AAH2rBcDXs79KFW3PmnNnImrAI4t0vz6GL0"
 
-# Чтение токена из переменных окружения
-API_TOKEN = os.getenv("API_TOKEN")
-
-# Настройка бота и диспетчера
-bot = Bot(token="7780696135:AAH2rBcDXs79KFW3PmnNnImrAI4t0vz6GL0")
+bot = Bot(token=API_TOKEN)
 dp = Dispatcher(storage=MemoryStorage())
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Главное меню
 main_menu = ReplyKeyboardMarkup(
     keyboard=[
         [KeyboardButton(text="Зарегистрироваться в базе")],
@@ -39,7 +34,6 @@ register_menu = ReplyKeyboardMarkup(
     resize_keyboard=True
 )
 
-# Классы для FSM
 class RepresentativeRegistration(StatesGroup):
     country = State()
     city = State()
@@ -54,36 +48,33 @@ class PartnerRegistration(StatesGroup):
     phone = State()
     telegram = State()
 
-# Создание таблиц базы данных
 def create_tables():
-    conn = sqlite3.connect("fohow.db")
-    cursor = conn.cursor()
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS representatives (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            country TEXT NOT NULL,
-            city TEXT NOT NULL,
-            address TEXT NOT NULL,
-            phone TEXT NOT NULL,
-            contact_person TEXT NOT NULL
-        )
-    """)
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS partners (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            country TEXT NOT NULL,
-            city TEXT NOT NULL,
-            name TEXT NOT NULL,
-            phone TEXT NOT NULL,
-            telegram TEXT
-        )
-    """)
-    conn.commit()
-    conn.close()
+    with sqlite3.connect("fohow.db") as conn:
+        cursor = conn.cursor()
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS representatives (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                country TEXT NOT NULL,
+                city TEXT NOT NULL,
+                address TEXT NOT NULL,
+                phone TEXT NOT NULL,
+                contact_person TEXT NOT NULL
+            )
+        """)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS partners (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                country TEXT NOT NULL,
+                city TEXT NOT NULL,
+                name TEXT NOT NULL,
+                phone TEXT NOT NULL,
+                telegram TEXT
+            )
+        """)
 
-# Обработчики команд и меню
 @dp.message(Command("start"))
 async def send_welcome(message: Message):
+    logger.info("Обработчик /start вызван.")
     await message.answer(
         "Добро пожаловать в Базу FOHOW!\nВыберите действие из меню ниже.",
         reply_markup=main_menu
@@ -91,6 +82,7 @@ async def send_welcome(message: Message):
 
 @dp.message(lambda message: message.text == "Зарегистрироваться в базе")
 async def register_handler(message: Message):
+    logger.info("Меню регистрации открыто.")
     await message.answer(
         "Выберите, кого вы хотите зарегистрировать:",
         reply_markup=register_menu
@@ -98,6 +90,7 @@ async def register_handler(message: Message):
 
 @dp.message(lambda message: message.text == "Как представительство")
 async def register_representative(message: Message, state: FSMContext):
+    logger.info("Регистрация представительства начата.")
     await message.answer("Введите страну:")
     await state.set_state(RepresentativeRegistration.country)
 
@@ -128,19 +121,15 @@ async def ask_contact_person(message: Message, state: FSMContext):
 @dp.message(RepresentativeRegistration.contact_person)
 async def finish_registration(message: Message, state: FSMContext):
     user_data = await state.get_data()
-    conn = sqlite3.connect("fohow.db")
-    cursor = conn.cursor()
-    cursor.execute("""
-        INSERT INTO representatives (country, city, address, phone, contact_person)
-        VALUES (?, ?, ?, ?, ?)
-    """, (user_data['country'], user_data['city'], user_data['address'], user_data['phone'], message.text))
-    conn.commit()
-    conn.close()
-
+    with sqlite3.connect("fohow.db") as conn:
+        cursor = conn.cursor()
+        cursor.execute("""
+            INSERT INTO representatives (country, city, address, phone, contact_person)
+            VALUES (?, ?, ?, ?, ?)
+        """, (user_data['country'], user_data['city'], user_data['address'], user_data['phone'], message.text))
     await message.answer("Регистрация завершена!")
     await state.clear()
 
-# Основной метод
 async def main():
     create_tables()
     logger.info("Бот запущен...")
