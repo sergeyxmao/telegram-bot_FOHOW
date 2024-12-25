@@ -1,12 +1,19 @@
+import os
+import logging
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import Updater, CommandHandler, CallbackQueryHandler, MessageHandler, Filters, ConversationHandler
+from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ConversationHandler
 import sqlite3
+
+# Логирование
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 # Константы для состояний
 MAIN_MENU, SEARCH_MENU, SEARCH_COUNTRY = range(3)
 
 # Подключение к SQLite
-conn = sqlite3.connect('fohow.db', check_same_thread=False)
+DB_PATH = os.getenv('DB_PATH', 'fohow.db')
+conn = sqlite3.connect(DB_PATH, check_same_thread=False)
 cursor = conn.cursor()
 
 # Создание таблиц в базе данных
@@ -58,8 +65,7 @@ def search_menu_handler(update: Update, context):
         query.edit_message_text("Введите страну для поиска:")
         return SEARCH_COUNTRY
     elif query.data == 'back':
-        start(update, context)
-        return MAIN_MENU
+        return start(update, context)
 
 def search_country_handler(update: Update, context):
     search_type = context.user_data.get('search_type')
@@ -91,22 +97,27 @@ def cancel(update: Update, context):
     return ConversationHandler.END
 
 def main():
-    updater = Updater("7780696135:AAH2rBcDXs79KFW3PmnNnImrAI4t0vz6GL0", use_context=True)
-    dp = updater.dispatcher
+    # Чтение токена из переменных окружения
+    token = os.getenv('TELEGRAM_BOT_TOKEN')
+    if not token:
+        logger.error("TELEGRAM_BOT_TOKEN не установлен в переменных окружения.")
+        return
+
+    application = Application.builder().token(token).build()
 
     conv_handler = ConversationHandler(
         entry_points=[CommandHandler('start', start)],
         states={
             MAIN_MENU: [CallbackQueryHandler(main_menu_handler)],
             SEARCH_MENU: [CallbackQueryHandler(search_menu_handler)],
-            SEARCH_COUNTRY: [MessageHandler(Filters.text & ~Filters.command, search_country_handler)]
+            SEARCH_COUNTRY: [MessageHandler(filters.TEXT & ~filters.COMMAND, search_country_handler)]
         },
         fallbacks=[CommandHandler('cancel', cancel)]
     )
 
-    dp.add_handler(conv_handler)
-    updater.start_polling()
-    updater.idle()
+    application.add_handler(conv_handler)
+    logger.info("Бот запущен и ожидает сообщения.")
+    application.run_polling()
 
 if __name__ == '__main__':
     main()
