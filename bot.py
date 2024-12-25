@@ -9,15 +9,8 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 import os
 
-# Чтение токена и URL вебхука из переменных окружения
+# Чтение токена из переменных окружения
 API_TOKEN = os.getenv("API_TOKEN")
-WEBHOOK_URL = os.getenv("WEBHOOK_URL")
-
-# Проверка токена и URL вебхука
-if not API_TOKEN:
-    raise ValueError("Переменная окружения API_TOKEN не задана или пуста.")
-if not WEBHOOK_URL:
-    raise ValueError("Переменная окружения WEBHOOK_URL не задана или пуста.")
 
 # Настройка бота и диспетчера
 bot = Bot(token=API_TOKEN)
@@ -145,21 +138,9 @@ async def finish_registration(message: Message, state: FSMContext):
     await message.answer("Регистрация завершена!")
     await state.clear()
 
-# Установка вебхука
-async def set_webhook():
-    logger.info("Устанавливаем вебхук...")
-    await bot.set_webhook(WEBHOOK_URL)
-
-# Удаление вебхука (при необходимости)
-async def delete_webhook():
-    logger.info("Удаляем старый вебхук...")
-    await bot.delete_webhook(drop_pending_updates=True)
-
 # Основной метод
 async def main():
     create_tables()
-    await delete_webhook()  # Удаляем старый вебхук
-    await set_webhook()  # Устанавливаем новый вебхук
     logger.info("Бот запущен...")
     await dp.start_polling(bot)
 
