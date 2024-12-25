@@ -8,13 +8,15 @@ from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 
-# Токен бота
+# Укажите токен вашего бота
 API_TOKEN = "7780696135:AAEyN2imxZU4U99MwyQHw0P8zlInoZPbGqk"
+
+# Укажите URL вашего бота на сервере (например, Railway)
+WEBHOOK_URL = "https://<your-deployed-app-url>"
 
 bot = Bot(token=API_TOKEN)
 dp = Dispatcher(storage=MemoryStorage())
 
-# Логирование
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
@@ -27,7 +29,7 @@ main_menu = ReplyKeyboardMarkup(
     resize_keyboard=True
 )
 
-# Подменю для регистрации
+# Подменю регистрации
 register_menu = ReplyKeyboardMarkup(
     keyboard=[
         [KeyboardButton(text="Как представительство")],
@@ -37,7 +39,7 @@ register_menu = ReplyKeyboardMarkup(
     resize_keyboard=True
 )
 
-# Состояния для регистрации представительства
+# Классы для состояний
 class RepresentativeRegistration(StatesGroup):
     country = State()
     city = State()
@@ -45,7 +47,6 @@ class RepresentativeRegistration(StatesGroup):
     phone = State()
     contact_person = State()
 
-# Состояния для регистрации партнёра
 class PartnerRegistration(StatesGroup):
     country = State()
     city = State()
@@ -53,7 +54,7 @@ class PartnerRegistration(StatesGroup):
     phone = State()
     telegram = State()
 
-# Создание таблиц
+# Создание таблиц в базе данных
 def create_tables():
     conn = sqlite3.connect("fohow.db")
     cursor = conn.cursor()
@@ -85,37 +86,7 @@ def create_tables():
     conn.commit()
     conn.close()
 
-# Сохранение представительства в базу
-def save_representative_to_db(data):
-    try:
-        conn = sqlite3.connect("fohow.db")
-        cursor = conn.cursor()
-        cursor.execute("""
-            INSERT INTO representatives (country, city, address, phone, contact_person)
-            VALUES (?, ?, ?, ?, ?)
-        """, (data['country'], data['city'], data['address'], data['phone'], data['contact_person']))
-        conn.commit()
-    except sqlite3.Error as e:
-        logger.error(f"Ошибка при работе с базой данных: {e}")
-    finally:
-        conn.close()
-
-# Сохранение партнёра в базу
-def save_partner_to_db(data):
-    try:
-        conn = sqlite3.connect("fohow.db")
-        cursor = conn.cursor()
-        cursor.execute("""
-            INSERT INTO partners (country, city, name, phone, telegram)
-            VALUES (?, ?, ?, ?, ?)
-        """, (data['country'], data['city'], data['name'], data['phone'], data.get('telegram')))
-        conn.commit()
-    except sqlite3.Error as e:
-        logger.error(f"Ошибка при работе с базой данных: {e}")
-    finally:
-        conn.close()
-
-# Команда /start
+# Обработчик команды /start
 @dp.message(Command("start"))
 async def send_welcome(message: Message):
     await message.answer(
@@ -123,99 +94,72 @@ async def send_welcome(message: Message):
         reply_markup=main_menu
     )
 
-# Подменю регистрации
-@dp.message(lambda message: message.text == "Зарегистрироваться в базе")
-async def register_handler(message: Message):
-    await message.answer(
-        "Выберите, кого вы хотите зарегистрировать:",
-        reply_markup=register_menu
-    )
-
-# Регистрация представительства
+# Обработчики для регистрации представительств
 @dp.message(lambda message: message.text == "Как представительство")
 async def register_representative(message: Message, state: FSMContext):
     await message.answer("Введите страну:")
     await state.set_state(RepresentativeRegistration.country)
 
 @dp.message(RepresentativeRegistration.country)
-async def ask_city(message: Message, state: FSMContext):
+async def ask_city_for_representative(message: Message, state: FSMContext):
     await state.update_data(country=message.text)
     await message.answer("Введите город:")
     await state.set_state(RepresentativeRegistration.city)
 
 @dp.message(RepresentativeRegistration.city)
-async def ask_address(message: Message, state: FSMContext):
+async def ask_address_for_representative(message: Message, state: FSMContext):
     await state.update_data(city=message.text)
     await message.answer("Введите адрес:")
     await state.set_state(RepresentativeRegistration.address)
 
 @dp.message(RepresentativeRegistration.address)
-async def ask_phone(message: Message, state: FSMContext):
+async def ask_phone_for_representative(message: Message, state: FSMContext):
     await state.update_data(address=message.text)
     await message.answer("Введите телефон:")
     await state.set_state(RepresentativeRegistration.phone)
 
 @dp.message(RepresentativeRegistration.phone)
-async def ask_contact_person(message: Message, state: FSMContext):
+async def ask_contact_person_for_representative(message: Message, state: FSMContext):
     await state.update_data(phone=message.text)
     await message.answer("Введите имя контактного лица:")
     await state.set_state(RepresentativeRegistration.contact_person)
 
 @dp.message(RepresentativeRegistration.contact_person)
-async def finish_registration(message: Message, state: FSMContext):
+async def finish_representative_registration(message: Message, state: FSMContext):
     user_data = await state.get_data()
-    save_representative_to_db(user_data)
-    await message.answer("Регистрация представительства завершена!")
-    await state.clear()
+    conn = sqlite3.connect("fohow.db")
+    cursor = conn.cursor()
+    cursor.execute("""
+        INSERT INTO representatives (country, city, address, phone, contact_person)
+        VALUES (?, ?, ?, ?, ?)
+    """, (user_data['country'], user_data['city'], user_data['address'], user_data['phone'], message.text))
+    conn.commit()
+    conn.close()
 
-# Регистрация партнёра
-@dp.message(lambda message: message.text == "Как партнёр")
-async def register_partner(message: Message, state: FSMContext):
-    await message.answer("Введите страну:")
-    await state.set_state(PartnerRegistration.country)
-
-@dp.message(PartnerRegistration.country)
-async def ask_city_for_partner(message: Message, state: FSMContext):
-    await state.update_data(country=message.text)
-    await message.answer("Введите город:")
-    await state.set_state(PartnerRegistration.city)
-
-@dp.message(PartnerRegistration.city)
-async def ask_name_for_partner(message: Message, state: FSMContext):
-    await state.update_data(city=message.text)
-    await message.answer("Введите имя партнёра:")
-    await state.set_state(PartnerRegistration.name)
-
-@dp.message(PartnerRegistration.name)
-async def ask_phone_for_partner(message: Message, state: FSMContext):
-    await state.update_data(name=message.text)
-    await message.answer("Введите телефон:")
-    await state.set_state(PartnerRegistration.phone)
-
-@dp.message(PartnerRegistration.phone)
-async def ask_telegram_for_partner(message: Message, state: FSMContext):
-    await state.update_data(phone=message.text)
-    await message.answer("Введите Telegram-имя (или пропустите, отправив -):")
-    await state.set_state(PartnerRegistration.telegram)
-
-@dp.message(PartnerRegistration.telegram)
-async def finish_partner_registration(message: Message, state: FSMContext):
-    user_data = await state.get_data()
-    user_data['telegram'] = message.text if message.text != "-" else None
-    save_partner_to_db(user_data)
-    await message.answer("Регистрация партнёра завершена!")
-    await state.clear()
-
-# Кнопка "Назад"
-@dp.message(lambda message: message.text == "Назад")
-async def go_back_to_main_menu(message: Message):
     await message.answer(
-        "Вы вернулись в главное меню.",
-        reply_markup=main_menu
+        f"Регистрация завершена:\n"
+        f"Страна: {user_data['country']}\n"
+        f"Город: {user_data['city']}\n"
+        f"Адрес: {user_data['address']}\n"
+        f"Телефон: {user_data['phone']}\n"
+        f"Контактное лицо: {message.text}"
     )
+    await state.clear()
 
+# Установка webhook
+async def set_webhook():
+    await bot.set_webhook(WEBHOOK_URL)
+
+# Удаление webhook (при необходимости)
+async def delete_webhook():
+    await bot.delete_webhook()
+
+# Основная функция
 async def main():
     create_tables()
+    logger.info("Настройка webhook...")
+    await set_webhook()
+    logger.info("Бот запущен...")
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
