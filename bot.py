@@ -1,26 +1,24 @@
 import asyncio
 import logging
+import sqlite3
 from aiogram import Bot, Dispatcher
 from aiogram.types import Message, ReplyKeyboardMarkup, KeyboardButton
+from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
-from aiogram.fsm.storage.memory import MemoryStorage
-import sqlite3
+import os
 
-# Настройка логирования
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+# Чтение токена и URL вебхука из переменных окружения
+API_TOKEN = os.getenv("API_TOKEN")
+WEBHOOK_URL = os.getenv("WEBHOOK_URL")
 
-# Токен бота
-API_TOKEN = "7780696135:AAEyN2imxZU4U99MwyQHw0P8zlInoZPbGqk"
-
-# URL вебхука (замените на ваш реальный домен на Railway)
-WEBHOOK_URL = "https://your-app-name.railway.app/webhook"
-
-# Инициализация бота и диспетчера
+# Настройка бота и диспетчера
 bot = Bot(token=API_TOKEN)
 dp = Dispatcher(storage=MemoryStorage())
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 # Главное меню
 main_menu = ReplyKeyboardMarkup(
@@ -40,7 +38,7 @@ register_menu = ReplyKeyboardMarkup(
     resize_keyboard=True
 )
 
-# Состояния для регистрации представительства
+# Классы для FSM
 class RepresentativeRegistration(StatesGroup):
     country = State()
     city = State()
@@ -48,7 +46,6 @@ class RepresentativeRegistration(StatesGroup):
     phone = State()
     contact_person = State()
 
-# Состояния для регистрации партнёра
 class PartnerRegistration(StatesGroup):
     country = State()
     city = State()
@@ -56,7 +53,7 @@ class PartnerRegistration(StatesGroup):
     phone = State()
     telegram = State()
 
-# Создание таблиц в базе данных
+# Создание таблиц базы данных
 def create_tables():
     conn = sqlite3.connect("fohow.db")
     cursor = conn.cursor()
@@ -83,12 +80,7 @@ def create_tables():
     conn.commit()
     conn.close()
 
-# Установка вебхука
-async def set_webhook():
-    await bot.set_webhook(WEBHOOK_URL)
-    logger.info("Вебхук успешно установлен.")
-
-# Обработчик команды /start
+# Обработчики команд и меню
 @dp.message(Command("start"))
 async def send_welcome(message: Message):
     await message.answer(
@@ -96,7 +88,6 @@ async def send_welcome(message: Message):
         reply_markup=main_menu
     )
 
-# Обработчики кнопок для регистрации представительства
 @dp.message(lambda message: message.text == "Зарегистрироваться в базе")
 async def register_handler(message: Message):
     await message.answer(
@@ -136,79 +127,31 @@ async def ask_contact_person(message: Message, state: FSMContext):
 @dp.message(RepresentativeRegistration.contact_person)
 async def finish_registration(message: Message, state: FSMContext):
     user_data = await state.get_data()
-    await state.update_data(contact_person=message.text)
-
     conn = sqlite3.connect("fohow.db")
     cursor = conn.cursor()
     cursor.execute("""
         INSERT INTO representatives (country, city, address, phone, contact_person)
         VALUES (?, ?, ?, ?, ?)
-    """, (user_data['country'], user_data['city'], user_data['address'], user_data['phone'], user_data['contact_person']))
+    """, (user_data['country'], user_data['city'], user_data['address'], user_data['phone'], message.text))
     conn.commit()
     conn.close()
 
-    await message.answer(
-        f"Регистрация завершена!\n"
-        f"Данные:\n"
-        f"Страна: {user_data['country']}\n"
-        f"Город: {user_data['city']}\n"
-        f"Адрес: {user_data['address']}\n"
-        f"Телефон: {user_data['phone']}\n"
-        f"Контактное лицо: {message.text}"
-    )
+    await message.answer("Регистрация завершена!")
     await state.clear()
 
-# Обработчики кнопок для регистрации партнёра
-@dp.message(lambda message: message.text == "Как партнёр")
-async def register_partner(message: Message, state: FSMContext):
-    await message.answer("Введите страну:")
-    await state.set_state(PartnerRegistration.country)
+# Установка вебхука
+async def set_webhook():
+    await bot.set_webhook(WEBHOOK_URL)
 
-@dp.message(PartnerRegistration.country)
-async def ask_city_partner(message: Message, state: FSMContext):
-    await state.update_data(country=message.text)
-    await message.answer("Введите город:")
-    await state.set_state(PartnerRegistration.city)
+# Удаление вебхука (при необходимости)
+async def delete_webhook():
+    await bot.delete_webhook(drop_pending_updates=True)
 
-@dp.message(PartnerRegistration.city)
-async def ask_name_partner(message: Message, state: FSMContext):
-    await state.update_data(city=message.text)
-    await message.answer("Введите имя партнёра:")
-    await state.set_state(PartnerRegistration.name)
-
-@dp.message(PartnerRegistration.name)
-async def ask_phone_partner(message: Message, state: FSMContext):
-    await state.update_data(name=message.text)
-    await message.answer("Введите телефон:")
-    await state.set_state(PartnerRegistration.phone)
-
-@dp.message(PartnerRegistration.phone)
-async def ask_telegram_partner(message: Message, state: FSMContext):
-    await state.update_data(phone=message.text)
-    await message.answer("Введите Telegram (или пропустите, отправив '-'):")
-    await state.set_state(PartnerRegistration.telegram)
-
-@dp.message(PartnerRegistration.telegram)
-async def finish_partner_registration(message: Message, state: FSMContext):
-    user_data = await state.get_data()
-    telegram = message.text if message.text != "-" else None
-
-    conn = sqlite3.connect("fohow.db")
-    cursor = conn.cursor()
-    cursor.execute("""
-        INSERT INTO partners (country, city, name, phone, telegram)
-        VALUES (?, ?, ?, ?, ?)
-    """, (user_data['country'], user_data['city'], user_data['name'], user_data['phone'], telegram))
-    conn.commit()
-    conn.close()
-
-    await message.answer("Регистрация партнёра завершена.")
-    await state.clear()
-
-# Основная функция
+# Основной метод
 async def main():
     create_tables()
     await set_webhook()
+    logger.info("Бот запущен...")
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
