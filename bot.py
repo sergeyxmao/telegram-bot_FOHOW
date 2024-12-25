@@ -13,7 +13,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Токен бота
-API_TOKEN = "Ваш_Telegram_API_Token"
+API_TOKEN = "7780696135:AAEyN2imxZU4U99MwyQHw0P8zlInoZPbGqk"
 
 # URL вебхука (замените на ваш реальный домен на Railway)
 WEBHOOK_URL = "https://your-app-name.railway.app/webhook"
