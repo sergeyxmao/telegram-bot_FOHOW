@@ -8,14 +8,17 @@ from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 
+# Токен бота
 API_TOKEN = "7780696135:AAEyN2imxZU4U99MwyQHw0P8zlInoZPbGqk"
 
 bot = Bot(token=API_TOKEN)
 dp = Dispatcher(storage=MemoryStorage())
 
+# Логирование
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# Главное меню
 main_menu = ReplyKeyboardMarkup(
     keyboard=[
         [KeyboardButton(text="Зарегистрироваться в базе")],
@@ -24,6 +27,7 @@ main_menu = ReplyKeyboardMarkup(
     resize_keyboard=True
 )
 
+# Подменю для регистрации
 register_menu = ReplyKeyboardMarkup(
     keyboard=[
         [KeyboardButton(text="Как представительство")],
@@ -33,6 +37,7 @@ register_menu = ReplyKeyboardMarkup(
     resize_keyboard=True
 )
 
+# Состояния для регистрации представительства
 class RepresentativeRegistration(StatesGroup):
     country = State()
     city = State()
@@ -40,9 +45,20 @@ class RepresentativeRegistration(StatesGroup):
     phone = State()
     contact_person = State()
 
-def create_table():
+# Состояния для регистрации партнёра
+class PartnerRegistration(StatesGroup):
+    country = State()
+    city = State()
+    name = State()
+    phone = State()
+    telegram = State()
+
+# Создание таблиц
+def create_tables():
     conn = sqlite3.connect("fohow.db")
     cursor = conn.cursor()
+
+    # Таблица для представительств
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS representatives (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -53,9 +69,23 @@ def create_table():
             contact_person TEXT NOT NULL
         )
     """)
+
+    # Таблица для партнёров
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS partners (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            country TEXT NOT NULL,
+            city TEXT NOT NULL,
+            name TEXT NOT NULL,
+            phone TEXT NOT NULL,
+            telegram TEXT
+        )
+    """)
+
     conn.commit()
     conn.close()
 
+# Сохранение представительства в базу
 def save_representative_to_db(data):
     try:
         conn = sqlite3.connect("fohow.db")
@@ -70,6 +100,22 @@ def save_representative_to_db(data):
     finally:
         conn.close()
 
+# Сохранение партнёра в базу
+def save_partner_to_db(data):
+    try:
+        conn = sqlite3.connect("fohow.db")
+        cursor = conn.cursor()
+        cursor.execute("""
+            INSERT INTO partners (country, city, name, phone, telegram)
+            VALUES (?, ?, ?, ?, ?)
+        """, (data['country'], data['city'], data['name'], data['phone'], data.get('telegram')))
+        conn.commit()
+    except sqlite3.Error as e:
+        logger.error(f"Ошибка при работе с базой данных: {e}")
+    finally:
+        conn.close()
+
+# Команда /start
 @dp.message(Command("start"))
 async def send_welcome(message: Message):
     await message.answer(
@@ -77,6 +123,7 @@ async def send_welcome(message: Message):
         reply_markup=main_menu
     )
 
+# Подменю регистрации
 @dp.message(lambda message: message.text == "Зарегистрироваться в базе")
 async def register_handler(message: Message):
     await message.answer(
@@ -84,75 +131,82 @@ async def register_handler(message: Message):
         reply_markup=register_menu
     )
 
+# Регистрация представительства
 @dp.message(lambda message: message.text == "Как представительство")
 async def register_representative(message: Message, state: FSMContext):
-    logger.info("Пользователь начал регистрацию представительства.")
     await message.answer("Введите страну:")
     await state.set_state(RepresentativeRegistration.country)
 
 @dp.message(RepresentativeRegistration.country)
 async def ask_city(message: Message, state: FSMContext):
-    if message.text.strip():
-        logger.info(f"Текущее состояние: {await state.get_state()}, Ввод страны: {message.text}")
-        await state.update_data(country=message.text)
-        await message.answer("Введите город:")
-        await state.set_state(RepresentativeRegistration.city)
+    await state.update_data(country=message.text)
+    await message.answer("Введите город:")
+    await state.set_state(RepresentativeRegistration.city)
 
 @dp.message(RepresentativeRegistration.city)
 async def ask_address(message: Message, state: FSMContext):
-    if message.text.strip():
-        logger.info(f"Текущее состояние: {await state.get_state()}, Ввод города: {message.text}")
-        await state.update_data(city=message.text)
-        await message.answer("Введите адрес:")
-        await state.set_state(RepresentativeRegistration.address)
+    await state.update_data(city=message.text)
+    await message.answer("Введите адрес:")
+    await state.set_state(RepresentativeRegistration.address)
 
 @dp.message(RepresentativeRegistration.address)
 async def ask_phone(message: Message, state: FSMContext):
-    if message.text.strip():
-        logger.info(f"Текущее состояние: {await state.get_state()}, Ввод адреса: {message.text}")
-        await state.update_data(address=message.text)
-        await message.answer("Введите телефон:")
-        await state.set_state(RepresentativeRegistration.phone)
+    await state.update_data(address=message.text)
+    await message.answer("Введите телефон:")
+    await state.set_state(RepresentativeRegistration.phone)
 
 @dp.message(RepresentativeRegistration.phone)
 async def ask_contact_person(message: Message, state: FSMContext):
-    if message.text.strip():
-        logger.info(f"Текущее состояние: {await state.get_state()}, Ввод телефона: {message.text}")
-        await state.update_data(phone=message.text)
-        await message.answer("Введите имя контактного лица:")
-        await state.set_state(RepresentativeRegistration.contact_person)
+    await state.update_data(phone=message.text)
+    await message.answer("Введите имя контактного лица:")
+    await state.set_state(RepresentativeRegistration.contact_person)
 
 @dp.message(RepresentativeRegistration.contact_person)
 async def finish_registration(message: Message, state: FSMContext):
-    if message.text.strip():
-        logger.info(f"Текущее состояние: {await state.get_state()}, Ввод контактного лица: {message.text}")
-        user_data = await state.get_data()
-        await state.update_data(contact_person=message.text)
+    user_data = await state.get_data()
+    save_representative_to_db(user_data)
+    await message.answer("Регистрация представительства завершена!")
+    await state.clear()
 
-        save_representative_to_db({
-            "country": user_data['country'],
-            "city": user_data['city'],
-            "address": user_data['address'],
-            "phone": user_data['phone'],
-            "contact_person": message.text
-        })
-
-        await message.answer(
-            f"Регистрация завершена и сохранена в базе!\n"
-            f"Данные представительства:\n"
-            f"Страна: {user_data['country']}\n"
-            f"Город: {user_data['city']}\n"
-            f"Адрес: {user_data['address']}\n"
-            f"Телефон: {user_data['phone']}\n"
-            f"Контактное лицо: {message.text}"
-        )
-
-        await state.clear()
-
+# Регистрация партнёра
 @dp.message(lambda message: message.text == "Как партнёр")
-async def register_partner(message: Message):
-    await message.answer("Функция регистрации партнёров пока не реализована.")
+async def register_partner(message: Message, state: FSMContext):
+    await message.answer("Введите страну:")
+    await state.set_state(PartnerRegistration.country)
 
+@dp.message(PartnerRegistration.country)
+async def ask_city_for_partner(message: Message, state: FSMContext):
+    await state.update_data(country=message.text)
+    await message.answer("Введите город:")
+    await state.set_state(PartnerRegistration.city)
+
+@dp.message(PartnerRegistration.city)
+async def ask_name_for_partner(message: Message, state: FSMContext):
+    await state.update_data(city=message.text)
+    await message.answer("Введите имя партнёра:")
+    await state.set_state(PartnerRegistration.name)
+
+@dp.message(PartnerRegistration.name)
+async def ask_phone_for_partner(message: Message, state: FSMContext):
+    await state.update_data(name=message.text)
+    await message.answer("Введите телефон:")
+    await state.set_state(PartnerRegistration.phone)
+
+@dp.message(PartnerRegistration.phone)
+async def ask_telegram_for_partner(message: Message, state: FSMContext):
+    await state.update_data(phone=message.text)
+    await message.answer("Введите Telegram-имя (или пропустите, отправив -):")
+    await state.set_state(PartnerRegistration.telegram)
+
+@dp.message(PartnerRegistration.telegram)
+async def finish_partner_registration(message: Message, state: FSMContext):
+    user_data = await state.get_data()
+    user_data['telegram'] = message.text if message.text != "-" else None
+    save_partner_to_db(user_data)
+    await message.answer("Регистрация партнёра завершена!")
+    await state.clear()
+
+# Кнопка "Назад"
 @dp.message(lambda message: message.text == "Назад")
 async def go_back_to_main_menu(message: Message):
     await message.answer(
@@ -160,13 +214,8 @@ async def go_back_to_main_menu(message: Message):
         reply_markup=main_menu
     )
 
-@dp.message(lambda message: message.text == "Найти")
-async def find_handler(message: Message):
-    await message.answer("Вы выбрали поиск. Уточните, что хотите найти:\n1. Представительство\n2. Партнёра")
-
 async def main():
-    create_table()
-    logger.info("Бот запущен...")
+    create_tables()
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
